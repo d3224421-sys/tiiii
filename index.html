@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FLASHLIGHT CONSOLE</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --on:  #ffffff;
+      --off: #0a0a0a;
+      --accent: #00ff41;
+      --dim: #1a1a1a;
+      --border: #00ff41;
+    }
+
+    body {
+      background: var(--off);
+      color: var(--accent);
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: background 0.05s;
+    }
+
+    body.flash-on {
+      background: var(--on);
+      color: #000;
+    }
+
+    /* CRT scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .console-wrap {
+      width: min(480px, 96vw);
+      border: 1px solid var(--border);
+      box-shadow: 0 0 24px rgba(0,255,65,0.25), inset 0 0 8px rgba(0,255,65,0.04);
+      padding: 0;
+      background: var(--dim);
+    }
+
+    .console-header {
+      background: #111;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.r { background: #ff5f56; }
+    .dot.y { background: #ffbd2e; }
+    .dot.g { background: #27c93f; }
+
+    .title-bar { flex: 1; text-align: center; opacity: 0.7; font-size: 10px; }
+
+    .console-body {
+      padding: 20px 20px 12px;
+      min-height: 380px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .log-area {
+      flex: 1;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-y: auto;
+      max-height: 260px;
+      padding-right: 4px;
+    }
+
+    .log-area::-webkit-scrollbar { width: 4px; }
+    .log-area::-webkit-scrollbar-thumb { background: var(--accent); opacity: 0.4; }
+
+    .log-line { opacity: 0; animation: fadein 0.25s forwards; }
+    .log-line.ok   { color: var(--accent); }
+    .log-line.warn { color: #ffbd2e; }
+    .log-line.err  { color: #ff5f56; }
+    .log-line.info { color: #7ecfff; }
+    .log-line.sys  { color: #aaa; }
+
+    @keyframes fadein { to { opacity: 1; } }
+
+    .prompt-row {
+      display: flex;
+      align-items: center;
+      margin-top: 16px;
+      border-top: 1px solid #222;
+      padding-top: 12px;
+      gap: 8px;
+    }
+
+    .prompt-label { font-size: 13px; white-space: nowrap; color: var(--accent); }
+
+    .prompt-row input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--accent);
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      caret-color: var(--accent);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    button {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 9px 6px;
+      cursor: pointer;
+      letter-spacing: 0.08em;
+      transition: background 0.15s, color 0.15s;
+      text-transform: uppercase;
+    }
+
+    button:hover  { background: var(--accent); color: #000; }
+    button:active { opacity: 0.7; }
+    button:disabled { opacity: 0.3; cursor: not-allowed; }
+    button.danger { border-color: #ff5f56; color: #ff5f56; }
+    button.danger:hover { background: #ff5f56; color: #000; }
+    button.wide { grid-column: 1 / -1; border-color: var(--accent); }
+    button.wide:hover { background: var(--accent); color: #000; }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      border-top: 1px solid #222;
+      font-size: 10px;
+      color: #555;
+      letter-spacing: 0.1em;
+    }
+
+    .led {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #333;
+      display: inline-block;
+      margin-right: 5px;
+      vertical-align: middle;
+      box-shadow: none;
+      transition: background 0.1s, box-shadow 0.1s;
+    }
+    .led.active {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+    }
+
+    .blink-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 13px;
+      background: var(--accent);
+      animation: blink 0.9s step-end infinite;
+      vertical-align: middle;
+      margin-left: 2px;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+  </style>
+</head>
+<body>
+
+<div class="console-wrap">
+  <div class="console-header">
+    <span class="dot r"></span>
+    <span class="dot y"></span>
+    <span class="dot g"></span>
+    <span class="title-bar">FLASHLIGHT CONSOLE v1.0 — root@device</span>
+  </div>
+
+  <div class="console-body">
+    <div class="log-area" id="log"></div>
+
+    <div class="prompt-row">
+      <span class="prompt-label">root@flash:~$</span>
+      <input id="cmd" type="text" placeholder="ketik perintah..." autocomplete="off" spellcheck="false" />
+      <span class="blink-cursor"></span>
+    </div>
+
+    <div class="controls">
+      <button id="btnInit">Init Camera</button>
+      <button id="btnOn"  disabled>Flash ON</button>
+      <button id="btnOff" disabled>Flash OFF</button>
+      <button id="btnStrobe" disabled>Strobe SPAM</button>
+      <button class="wide danger" id="btnStop" disabled>STOP</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span><span class="led" id="led"></span><span id="statusTxt">STANDBY</span></span>
+    <span id="fpsLabel">— fps</span>
+  </div>
+</div>
+
+<script>
+  const logEl     = document.getElementById('log');
+  const ledEl     = document.getElementById('led');
+  const statusTxt = document.getElementById('statusTxt');
+  const fpsLabel  = document.getElementById('fpsLabel');
+  const cmdInput  = document.getElementById('cmd');
+
+  const btnInit   = document.getElementById('btnInit');
+  const btnOn     = document.getElementById('btnOn');
+  const btnOff    = document.getElementById('btnOff');
+  const btnStrobe = document.getElementById('btnStrobe');
+  const btnStop   = document.getElementById('btnStop');
+
+  let track       = null;
+  let strobeTimer = null;
+  let flashState  = false;
+  let torchOn     = false;
+  let frameCount  = 0;
+  let fpsInterval = null;
+  let strobeDelay = 50; // ms default
+
+  // ── LOGGER ──────────────────────────────────────────────────────────
+  function log(msg, cls = 'ok') {
+    const ts = new Date().toLocaleTimeString('id-ID', { hour12: false });
+    const line = document.createElement('div');
+    line.className = `log-line ${cls}`;
+    line.textContent = `[${ts}]  ${msg}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(txt, active = false) {
+    statusTxt.textContent = txt;
+    ledEl.classList.toggle('active', active);
+  }
+
+  // ── SCREEN FLASH (visual) ────────────────────────────────────────────
+  function screenFlash(state) {
+    document.body.classList.toggle('flash-on', state);
+  }
+
+  // ── TORCH CONTROL ────────────────────────────────────────────────────
+  async function setTorch(state) {
+    if (!track) return false;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: state }] });
+      torchOn = state;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ── INIT CAMERA / TORCH ──────────────────────────────────────────────
+  btnInit.addEventListener('click', async () => {
+    log('Requesting camera access...', 'sys');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      const tracks = stream.getVideoTracks();
+      if (!tracks.length) throw new Error('No video track found');
+      track = tracks[0];
+
+      const caps = track.getCapabilities();
+      if (caps.torch) {
+        log('Torch capability detected ✓', 'ok');
+        btnOn.disabled     = false;
+        btnOff.disabled    = false;
+        btnStrobe.disabled = false;
+        log('Camera init SUCCESS — torch available', 'ok');
+      } else {
+        log('Torch NOT supported on this device', 'warn');
+        log('Screen-flash mode will be used instead', 'warn');
+        btnOn.disabled     = false;
+        btnOff.disabled    = false;
+        btnStrobe.disabled = false;
+      }
+
+      setStatus('CAMERA READY', true);
+      btnInit.disabled = true;
+      log('Type "help" for commands', 'info');
+    } catch (err) {
+      log(`ERROR: ${err.message}`, 'err');
+      log('Permission denied or camera unavailable', 'err');
+      setStatus('PERMISSION DENIED', false);
+    }
+  });
+
+  // ── FLASH ON ─────────────────────────────────────────────────────────
+  btnOn.addEventListener('click', async () => {
+    stopStrobe();
+    const ok = await setTorch(true);
+    screenFlash(true);
+    log(ok ? 'Torch ON' : 'Screen flash ON (no torch)', ok ? 'ok' : 'warn');
+    setStatus('FLASH ON', true);
+  });
+
+  // ── FLASH OFF ────────────────────────────────────────────────────────
+  btnOff.addEventListener('click', async () => {
+    stopStrobe();
+    await setTorch(false);
+    screenFlash(false);
+    log('Flash OFF', 'sys');
+    setStatus('FLASH OFF', false);
+  });
+
+  // ── STROBE / SPAM ────────────────────────────────────────────────────
+  btnStrobe.addEventListener('click', () => {
+    if (strobeTimer) { stopStrobe(); return; }
+    startStrobe(strobeDelay);
+  });
+
+  function startStrobe(delay) {
+    frameCount = 0;
+    btnStrobe.textContent = 'Strobe AKTIF';
+    btnStop.disabled = false;
+    setStatus('STROBING...', true);
+    log(`Strobe SPAM started — interval ${delay}ms`, 'warn');
+
+    fpsInterval = setInterval(() => {
+      const fps = Math.round(frameCount / 1);
+      fpsLabel.textContent = `${fps} fps`;
+      frameCount = 0;
+    }, 1000);
+
+    let state = false;
+    strobeTimer = setInterval(async () => {
+      state = !state;
+      flashState = state;
+      screenFlash(state);
+      await setTorch(state);
+      frameCount++;
+    }, delay);
+  }
+
+  function stopStrobe() {
+    if (strobeTimer) {
+      clearInterval(strobeTimer);
+      strobeTimer = null;
+    }
+    if (fpsInterval) {
+      clearInterval(fpsInterval);
+      fpsInterval = null;
+    }
+    setTorch(false);
+    screenFlash(false);
+    btnStrobe.textContent = 'Strobe SPAM';
+    btnStop.disabled = true;
+    fpsLabel.textContent = '— fps';
+    setStatus('STANDBY', false);
+    log('Strobe stopped', 'sys');
+  }
+
+  btnStop.addEventListener('click', stopStrobe);
+
+  // ── COMMAND INPUT ────────────────────────────────────────────────────
+  const COMMANDS = {
+    help: () => {
+      log('Commands:', 'info');
+      log('  init          — request camera access', 'sys');
+      log('  on            — turn flash on', 'sys');
+      log('  off           — turn flash off', 'sys');
+      log('  strobe [ms]   — start strobe (default 50ms)', 'sys');
+      log('  stop          — stop strobe', 'sys');
+      log('  speed [ms]    — set strobe interval', 'sys');
+      log('  status        — show current status', 'sys');
+      log('  clear         — clear console', 'sys');
+    },
+    init:   () => btnInit.click(),
+    on:     () => btnOn.click(),
+    off:    () => btnOff.click(),
+    stop:   () => stopStrobe(),
+    clear:  () => { logEl.innerHTML = ''; log('Console cleared.', 'sys'); },
+    status: () => {
+      log(`Torch: ${torchOn ? 'ON' : 'OFF'}`, 'info');
+      log(`Strobe: ${strobeTimer ? 'RUNNING' : 'STOPPED'}`, 'info');
+      log(`Interval: ${strobeDelay}ms`, 'info');
+      log(`Track: ${track ? track.label || 'active' : 'none'}`, 'info');
+    },
+  };
+
+  cmdInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const raw   = cmdInput.value.trim();
+    const parts = raw.split(/\s+/);
+    const cmd   = parts[0].toLowerCase();
+    const arg   = parts[1];
+
+    log(`$ ${raw}`, 'info');
+    cmdInput.value = '';
+
+    if (cmd === 'strobe') {
+      if (!track && !document.body.classList.contains('flash-on')) {
+        const ms = parseInt(arg) || strobeDelay;
+        strobeDelay = Math.max(16, Math.min(ms, 2000));
+        startStrobe(strobeDelay);
+      } else {
+        const ms = parseInt(arg) || strobeDelay;
+        strobeDelay = Math.max(16, Math.min(ms, 2000));
+        stopStrobe();
+        startStrobe(strobeDelay);
+      }
+      return;
+    }
+
+    if (cmd === 'speed') {
+      const ms = parseInt(arg);
+      if (isNaN(ms)) { log('Usage: speed <ms>', 'err'); return; }
+      strobeDelay = Math.max(16, Math.min(ms, 2000));
+      log(`Interval set to ${strobeDelay}ms`, 'ok');
+      if (strobeTimer) { stopStrobe(); startStrobe(strobeDelay); }
+      return;
+    }
+
+    if (COMMANDS[cmd]) { COMMANDS[cmd](); }
+    else if (cmd)      { log(`Unknown command: ${cmd}`, 'err'); }
+  });
+
+  // ── BOOT SEQUENCE ────────────────────────────────────────────────────
+  (function boot() {
+    const msgs = [
+      ['FLASHLIGHT CONSOLE v1.0', 'ok'],
+      ['Booting system...', 'sys'],
+      ['Checking WebRTC support... OK', 'sys'],
+      ['Checking MediaDevices API... OK', 'sys'],
+      ['Ready. Click "Init Camera" or type: init', 'info'],
+    ];
+    let delay = 0;
+    msgs.forEach(([m, c]) => {
+      delay += 300;
+      setTimeout(() => log(m, c), delay);
+    });
+  })();
+</script>
+</body>
+</html>
